@@ -1,4 +1,7 @@
 class Cart < ApplicationRecord
+  class InvalidQuantityError < StandardError; end
+  class ProductNotInCartError < StandardError; end
+
   has_many :cart_items, dependent: :destroy
   has_many :products, through: :cart_items
 
@@ -32,6 +35,10 @@ class Cart < ApplicationRecord
     end
 
     create!(total_price: 0)
+  end
+
+  def self.valid_quantity?(quantity)
+    quantity.to_i.positive?
   end
 
   def add_product(product, quantity)

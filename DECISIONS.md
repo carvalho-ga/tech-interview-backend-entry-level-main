@@ -78,6 +78,14 @@ O enunciado pede explicitamente para salvar o ID do carrinho na sessão. Usar `s
 
 Para evitar a geração de carrinhos "fantasma", que nunca chegavam a ser usados de verdade. Troquei para retornar `{ id: nil, products: [], total_price: 0 }` sem persistir nada, ou seja, um carrinho só é criado quando o usuário de fato adiciona um produto.
 
+### Ordem dos before_action: validar antes de resolver o carrinho
+
+`set_product`, `require_valid_quantity` e `set_cart` rodam nessa ordem de propósito: produto e quantidade são validados primeiro, e só depois o carrinho é resolvido (ou criado). Isso importa porque resolver o carrinho pode significar criar um registro novo no banco — fazer isso antes de saber se a operação é válida geraria um carrinho vazio sem necessidade, o que vai direto contra a decisão anterior de nunca persistir um carrinho fantasma. Como levantar uma exceção num `before_action` já interrompe a cadeia sozinho no Rails, nenhum efeito colateral acontece antes de tudo estar validado.
+
+### Erros de regra de negócio via raise + rescue_from, não render manual
+
+`InvalidQuantityError` e `ProductNotInCartError` (ambos definidos dentro de `Cart`) substituem o que antes eram chamadas manuais de `render json: { error: ... }` espalhadas pelo controller. Cada action levanta o erro específico do cenário, e quem decide como isso vira resposta HTTP é o `rescue_from` centralizado no `ApplicationController` — o mesmo mecanismo que já tratava `ActiveRecord::RecordNotFound` e `ActionController::ParameterMissing`. Com isso, toda a superfície de erro da API passa pelo mesmo caminho, e as actions do controller ficam só com o caminho feliz, sem `if/render` intercalado com a lógica principal.
+
 ### O fallback de busca por product_id em find_or_create_cart
 
 O teste de integração que já vinha no projeto cria um `CartItem` direto no banco, sem passar por sessão, e depois faz um `POST /cart/add_items`. Sem esse fallback, o controller criaria um carrinho novo e nunca encontraria o item que já existia. Busquei então o carrinho a partir do `CartItem` que já contém aquele produto, o que resolve o cenário do teste sem mudar o comportamento esperado em produção, onde cada usuário tem só um carrinho ativo por vez.

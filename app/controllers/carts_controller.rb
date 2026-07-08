@@ -1,4 +1,6 @@
 class CartsController < ApplicationController
+  before_action :set_product, only: [:create, :add_item]
+  before_action :require_valid_quantity, only: [:create, :add_item]
   before_action :set_cart, only: [:add_item, :remove_item]
 
   def show
@@ -7,33 +9,33 @@ class CartsController < ApplicationController
   end
 
   def create
-    product = find_product(params[:product_id])
-    return unless product
-
-    cart = find_or_create_cart(product_id: product.id)
-    return render_invalid_quantity unless cart.add_product(product, params[:quantity])
+    cart = find_or_create_cart(product_id: @product.id)
+    cart.add_product(@product, params[:quantity])
 
     render json: cart_response(cart), status: :ok
   end
 
   def add_item
-    product = find_product(params[:product_id])
-    return unless product
-
-    return render_invalid_quantity unless @cart.add_product(product, params[:quantity])
+    @cart.add_product(@product, params[:quantity])
 
     render json: cart_response(@cart), status: :ok
   end
 
   def remove_item
-    unless @cart.remove_product(params[:product_id])
-      return render json: { error: 'Product not found in cart' }, status: :unprocessable_entity
-    end
+    raise Cart::ProductNotInCartError, 'Product not found in cart' unless @cart.remove_product(params[:product_id])
 
     render json: cart_response(@cart), status: :ok
   end
 
   private
+
+  def set_product
+    @product = Product.find(params[:product_id])
+  end
+
+  def require_valid_quantity
+    raise Cart::InvalidQuantityError, 'Quantity must be greater than zero' unless Cart.valid_quantity?(params[:quantity])
+  end
 
   def set_cart
     @cart = find_or_create_cart(product_id: params[:product_id])
@@ -43,16 +45,6 @@ class CartsController < ApplicationController
     cart = Cart.find_or_create_for_session(cart_id: session[:cart_id], product_id: product_id)
     session[:cart_id] = cart.id
     cart
-  end
-
-  def find_product(product_id)
-    product = Product.find_by(id: product_id)
-    render json: { error: 'Product not found' }, status: :not_found if product.nil?
-    product
-  end
-
-  def render_invalid_quantity
-    render json: { error: 'Quantity must be greater than zero' }, status: :unprocessable_entity
   end
 
   def cart_response(cart)

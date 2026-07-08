@@ -58,6 +58,12 @@ RSpec.describe "/carts", type: :request do
         post '/cart', params: { product_id: product.id, quantity: 0 }, as: :json
         expect(response).to have_http_status(:unprocessable_entity)
       end
+
+      it 'does not create a cart' do
+        expect {
+          post '/cart', params: { product_id: product.id, quantity: 0 }, as: :json
+        }.not_to change(Cart, :count)
+      end
     end
 
     context 'when quantity is negative' do
@@ -132,6 +138,12 @@ RSpec.describe "/carts", type: :request do
       it 'returns 422 unprocessable entity' do
         post '/cart/add_item', params: { product_id: product.id, quantity: 0 }, as: :json
         expect(response).to have_http_status(:unprocessable_entity)
+      end
+
+      it 'does not create a cart when there is none in the session yet' do
+        expect {
+          post '/cart/add_item', params: { product_id: product.id, quantity: 0 }, as: :json
+        }.not_to change(Cart, :count)
       end
     end
 
