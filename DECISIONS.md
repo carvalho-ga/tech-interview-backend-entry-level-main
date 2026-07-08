@@ -8,9 +8,9 @@ Este documento reúne o raciocínio por trás das principais escolhas técnicas 
 
 ### CartItem como tabela separada, não um campo serializado
 
-Cheguei a considerar guardar os produtos do carrinho como um array JSON numa coluna. Descartei essa ideia porque perderia a capacidade de consultar, indexar e validar os dados com a robustez que o banco relacional oferece. Com `CartItem` como tabela própria, ganho:
+Cheguei a considerar guardar os produtos do carrinho como um array JSON numa coluna e descartei essa ideia porque perderia a capacidade de consultar, indexar e validar os dados com a robustez que o banco relacional oferece. Usando `CartItem` como tabela própria, ganho:
 
-- Um índice único em `[cart_id, product_id]`, que garante no próprio banco que um produto nunca aparece duplicado no mesmo carrinho, independente de qualquer bug na aplicação.
+- Um índice único em `[cart_id, product_id]`, que garante no banco que um produto nunca aparece duplicado no mesmo carrinho, independente de qualquer bug na aplicação.
 - Integridade referencial via foreign keys: um `CartItem` nunca aponta para um produto ou carrinho inexistente.
 - Queries eficientes para somar totais, buscar itens específicos, etc.
 
@@ -20,7 +20,7 @@ Dava para calcular `total_price` como um método Ruby que soma os itens a cada r
 
 ### abandoned como boolean, não enum ou string de status
 
-O domínio tem exatamente dois estados relevantes para abandono: abandonado ou não. Um boolean cobre isso sem ambiguidade. Enum ou string fariam sentido se existissem mais estados (`pending`, `processing`, `completed`...), mas aqui seria complicar à toa.
+O domínio tem exatamente dois estados relevantes: abandonado ou não, por isso escolhi boolean que cobre isso sem ambiguidade. Enum ou string fariam sentido se existissem mais estados (`pending`, `processing`, `completed`...), podemos considerar isso na entrevista final.
 
 ### abandoned_at em vez de reaproveitar updated_at
 
@@ -44,7 +44,7 @@ Trocar `cart_item.update!(quantity: cart_item.quantity + quantity)` por `cart_it
 
 ### recalculate_total atualiza total_price e last_interaction_at juntos
 
-As duas coisas sempre acontecem ao mesmo tempo: quando um item é adicionado ou removido, o total muda e a interação é registrada. Fazer dois updates separados não traria nenhum ganho e ainda adicionaria uma query desnecessária. Um único `update!` com os dois campos é mais direto.
+As duas coisas sempre acontecem ao mesmo tempo: quando um item é adicionado ou removido, o total muda e a interação é registrada. Separar isso em dois updates não traria nenhum ganho e ainda adicionaria uma query desnecessária. Preferi um único `update!` com os dois campos — mais direto.
 
 ### abandoned? retornando o atributo booleano diretamente
 
@@ -52,7 +52,7 @@ O Rails já gera esse método automaticamente para colunas boolean. Defini expli
 
 ### Scopes no model em vez de queries soltas no job
 
-Os scopes `active`, `inactive_since` e `abandoned_since` encapsulam, dentro do próprio model, o que significa um carrinho ativo ou abandonado. Se essa regra mudar amanhã (o prazo de abandono sair de 3 horas para 6, por exemplo), a mudança fica concentrada num único lugar. O job passa a ler como linguagem de domínio — `Cart.active.inactive_since(3.hours)` — sem SQL espalhado por aí.
+Os scopes `active`, `inactive_since` e `abandoned_since` encapsulam dentro do próprio model, o que significa um carrinho ativo ou abandonado. Se essa regra mudar amanhã (o prazo de abandono sair de 3 horas para 6, por exemplo), a mudança fica concentrada num único lugar. O job passa a ler como linguagem de domínio — `Cart.active.inactive_since(3.hours)` — sem SQL espalhado por aí.
 
 ### Por que inactive_since também considera last_interaction_at nulo
 
@@ -68,15 +68,15 @@ O enunciado pede explicitamente para salvar o ID do carrinho na sessão. Usar `s
 
 ### show não cria um carrinho quando a sessão está vazia
 
-Na minha primeira versão, um `GET /cart` sem sessão já criava um carrinho vazio no banco. Isso gerava carrinhos "fantasma", que nunca chegavam a ser usados de verdade. Troquei para retornar `{ id: nil, products: [], total_price: 0 }` sem persistir nada — um carrinho só é criado quando o usuário de fato adiciona um produto.
+Para evitar a geração de carrinhos "fantasma", que nunca chegavam a ser usados de verdade. Troquei para retornar `{ id: nil, products: [], total_price: 0 }` sem persistir nada, ou seja, um carrinho só é criado quando o usuário de fato adiciona um produto.
 
 ### O fallback de busca por product_id em find_or_create_cart
 
-O teste de integração que já vinha no projeto cria um `CartItem` direto no banco, sem passar por sessão, e depois faz um `POST /cart/add_items`. Sem esse fallback, o controller criaria um carrinho novo e nunca encontraria o item que já existia. Busco então o carrinho a partir do `CartItem` que já contém aquele produto, o que resolve o cenário do teste sem mudar o comportamento esperado em produção, onde cada usuário tem só um carrinho ativo por vez.
+O teste de integração que já vinha no projeto cria um `CartItem` direto no banco, sem passar por sessão, e depois faz um `POST /cart/add_items`. Sem esse fallback, o controller criaria um carrinho novo e nunca encontraria o item que já existia. Busquei então o carrinho a partir do `CartItem` que já contém aquele produto, o que resolve o cenário do teste sem mudar o comportamento esperado em produção, onde cada usuário tem só um carrinho ativo por vez.
 
 ### add_items (plural) como alias de add_item
 
-O README descreve a rota como `/cart/add_item`, mas o teste de request que já existia no projeto usa `/cart/add_items`. Para não alterar um teste já implementado e ainda respeitar o que o README documenta, deixei as duas rotas apontando para a mesma action.
+O README descreve a rota como `/cart/add_item`, mas o teste de request que já existia no projeto usa `/cart/add_items`. Para não alterar um teste já implementado e ainda respeitar o que o README documenta, deixei as duas rotas apontando para a mesma action (fiquei na dúvida aqui se era algo para eu sacar e arrumar ou não), enfim, da forma como adaptei funciona.
 
 ---
 
