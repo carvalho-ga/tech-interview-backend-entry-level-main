@@ -61,6 +61,13 @@ RSpec.describe "/products", type: :request do
       get product_url(product), as: :json
       expect(response).to be_successful
     end
+
+    it "renders a JSON error when the product does not exist" do
+      get product_url(99999), as: :json
+      expect(response).to have_http_status(:not_found)
+      json = JSON.parse(response.body)
+      expect(json['error']).to be_present
+    end
   end
 
   describe "POST /create" do
@@ -77,6 +84,15 @@ RSpec.describe "/products", type: :request do
              params: { product: valid_attributes }, headers: valid_headers, as: :json
         expect(response).to have_http_status(:created)
         expect(response.content_type).to match(a_string_including("application/json"))
+      end
+    end
+
+    context "when the product param is missing entirely" do
+      it "renders a JSON error instead of a raw exception" do
+        post products_url, params: {}, as: :json
+        expect(response).to have_http_status(:bad_request)
+        json = JSON.parse(response.body)
+        expect(json['error']).to be_present
       end
     end
 

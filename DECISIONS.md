@@ -88,6 +88,16 @@ O README descreve a rota como `/cart/add_item`, mas o teste de request que já e
 
 ---
 
+## Tratamento de erros
+
+### rescue_from centralizado no ApplicationController
+
+Reparei que só tinha tratado os caminhos felizes e os erros de negócio óbvios (produto inexistente, quantidade inválida), mas qualquer coisa fora desses caminhos — um `GET /products/:id` com um id que não existe, um `POST /products` sem o campo `product`, ou até um corpo JSON malformado — caía direto no tratamento padrão do Rails, que devolve o stack trace inteiro da exceção no corpo da resposta (em produção isso viraria uma resposta genérica, sem JSON, quebrando o contrato da API pro cliente). Adicionei `rescue_from` no `ApplicationController` para `ActiveRecord::RecordNotFound`, `ActiveRecord::RecordInvalid`, `ActionController::ParameterMissing` e `ActionDispatch::Http::Parameters::ParseError`, cada um devolvendo `{ error: mensagem }` com o status HTTP correto (404, 422, 400, 400). A mensagem de cada exceção já é descritiva o suficiente pra ser exposta ao cliente sem vazar detalhe de implementação (tipo linha de código ou stack trace).
+
+Não adicionei um rescue genérico pra `StandardError` — prefiro deixar um erro realmente inesperado estourar (e aparecer no log/500) a esconder um bug atrás de uma mensagem genérica bonitinha.
+
+---
+
 ## Catálogo de produtos
 
 ### Paginação em GET /products
