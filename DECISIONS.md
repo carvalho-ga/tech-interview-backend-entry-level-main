@@ -78,10 +78,6 @@ O teste de integração que já vinha no projeto cria um `CartItem` direto no ba
 
 O README descreve a rota como `/cart/add_item`, mas o teste de request que já existia no projeto usa `/cart/add_items`. Para não alterar um teste já implementado e ainda respeitar o que o README documenta, deixei as duas rotas apontando para a mesma action (fiquei na dúvida aqui se era algo para eu sacar e arrumar ou não), enfim, da forma como adaptei funciona.
 
-### Uma race que decidi não resolver: duas requisições simultâneas sem carrinho na sessão
-
-Se duas requisições chegarem ao mesmo tempo sem `cart_id` na sessão (ex: duplo clique na primeiríssima interação), as duas passam por `find_or_create_cart` sem encontrar nada, e cada uma cria seu próprio carrinho. Como a sessão aqui é `cookie_store` puro, não existe nenhum identificador do lado do servidor antes do cookie ir e voltar numa resposta — as duas requisições não compartilham nenhuma chave antes de criar o registro, então não tem lock, índice único ou transação que resolva isso no banco. O navegador acaba ficando só com o cookie da resposta que chegar por último; o outro carrinho vira órfão. Pensei em resolver com uma idempotency key gerada pelo cliente antes da primeira chamada, mas isso muda o contrato da API e depende do frontend — comparado ao que o desafio pede (sem autenticação, sem conta de usuário), seria complexidade desproporcional. Deixei como está: o carrinho órfão nunca mais é tocado, fica inativo, e o job de abandono cuida dele (marca como abandonado em 3h, remove em 7 dias).
-
 ---
 
 ## Catálogo de produtos
