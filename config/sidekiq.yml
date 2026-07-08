@@ -1,0 +1,15 @@
+:concurrency: 3
+:timeout: 60
+:verbose: true
+:queues:
+  - critical
+  - default
+  - mailers
+  - active_storage_analysis
+  - active_storage_purge
+
+:schedule:
+  mark_cart_as_abandoned:
+    cron: '0 * * * *'
+    class: MarkCartAsAbandonedJob
+    description: 'Marks inactive carts as abandoned (3h) and removes carts abandoned for 7+ days'
