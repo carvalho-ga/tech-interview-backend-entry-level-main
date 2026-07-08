@@ -34,13 +34,17 @@ O Rails atualiza `updated_at` automaticamente em qualquer modificação do regis
 
 ## Modelagem dos models
 
-### after_save e after_destroy no CartItem para atualizar last_interaction_at
+### add_product e remove_product concentram a mutação do carrinho no model
 
-A atualização de `last_interaction_at` é consequência direta de uma mudança em `CartItem`, então preferi colocar essa responsabilidade no próprio model via callback. Assim o comportamento é automático e não depende de o controller lembrar de disparar essa atualização — cada model cuida das regras do seu próprio domínio.
+Numa versão anterior, o controller manipulava `CartItem` diretamente e chamava `recalculate_total` logo em seguida, em dois passos separados e sem transação. Isso deixava uma janela real de concorrência aberta: duas requisições simultâneas adicionando o mesmo produto podiam ambas encontrar que o item ainda não existia e tentar criar duas linhas, esbarrando no índice único; ou ler a mesma quantidade e perder uma das duas atualizações. Movi essa lógica para `Cart#add_product` e `Cart#remove_product`, que envolvem toda a operação — busca do item, criação ou incremento, e recálculo do total — dentro de um único `with_lock`. Isso serializa leitura e escrita do mesmo carrinho entre requisições concorrentes, e o controller passa a chamar um método só, sem conhecer esses detalhes.
+
+### Incremento atômico em vez de ler e somar em Ruby
+
+Trocar `cart_item.update!(quantity: cart_item.quantity + quantity)` por `cart_item.increment!(:quantity, quantity)` faz o próprio banco somar no `UPDATE` (`quantity = quantity + ?`), em vez de trazer o valor para o Ruby, somar e gravar de volta. Combinado com o lock do carrinho, isso elimina o lost update: o cenário em que duas requisições leem a mesma quantidade e uma das duas somas acaba se perdendo.
 
 ### recalculate_total atualiza total_price e last_interaction_at juntos
 
-As duas coisas sempre acontecem ao mesmo tempo: quando um item é adicionado ou removido, o total muda e a interação é registrada. Separar isso em dois updates (um no callback do `CartItem`, outro no `recalculate_total`) não trazia nenhum ganho e ainda adicionava uma query desnecessária. Um único `update!` com os dois campos é mais direto.
+As duas coisas sempre acontecem ao mesmo tempo: quando um item é adicionado ou removido, o total muda e a interação é registrada. Fazer dois updates separados não traria nenhum ganho e ainda adicionaria uma query desnecessária. Um único `update!` com os dois campos é mais direto.
 
 ### abandoned? retornando o atributo booleano diretamente
 
@@ -76,6 +80,14 @@ O README descreve a rota como `/cart/add_item`, mas o teste de request que já e
 
 ---
 
+## Catálogo de produtos
+
+### Paginação em GET /products
+
+O endpoint devolvia `Product.all` sem limite nenhum. Com um catálogo grande isso vira um payload enorme e uma query pesada a cada request. Adicionei paginação simples por `page`/`per_page` direto na query (`limit`/`offset`), com um teto de 100 itens por página, sem trazer nenhuma gem nova pra isso — não parecia justificar uma dependência extra para o tamanho do problema aqui.
+
+---
+
 ## Job e agendamento
 
 ### Sidekiq com sidekiq-scheduler, em vez de uma rake task com cron do sistema
@@ -86,9 +98,15 @@ A stack já usa Sidekiq para processamento assíncrono, então o `sidekiq-schedu
 
 Rodando de hora em hora, o atraso máximo entre um carrinho completar 3 horas de inatividade e ser marcado como abandonado é de até 59 minutos. Achei um nível de precisão razoável para o problema. Um intervalo de 3 horas poderia atrasar a marcação em até 3 horas a mais, dobrando a tolerância real.
 
-### find_each no job
+### update_all e delete_all no job, em vez de instanciar cada carrinho
 
-`find_each` processa os registros em lotes de 1000, em vez de carregar tudo de uma vez na memória. Em produção pode haver milhares de carrinhos elegíveis para abandono, e carregar tudo junto seria um risco real de consumo excessivo de memória.
+A primeira versão usava `find_each(&:mark_as_abandoned)` e `find_each(&:destroy)`, processando os carrinhos elegíveis um de cada vez — o que evita carregar tudo de uma vez na memória, mas em escala significa um `UPDATE` ou `DELETE` por linha. Troquei por `update_all` e `delete_all`, que geram uma única instrução SQL para todos os registros que casam com a condição, ordens de magnitude mais rápido quando há muitos carrinhos elegíveis. O preço é pular validações e callbacks do Active Record nesse caminho, mas nem marcar um carrinho como abandonado nem remover um carrinho já abandonado há dias dependem de nenhum callback.
+
+Para o `delete_all` funcionar sem esbarrar na foreign key de `cart_items` — um carrinho abandonado pode perfeitamente ainda ter itens — troquei a constraint para `on_delete: :cascade`. O próprio Postgres remove os itens junto do carrinho, sem eu precisar instanciar cada um.
+
+### Índices compostos para as scopes do job
+
+`active`, `inactive_since` e `abandoned_since` filtram por `abandoned`, `last_interaction_at` e `abandoned_at`, e nenhuma dessas colunas tinha índice. Com poucos milhares de carrinhos isso já vira full table scan toda vez que o job roda. Adicionei `[:abandoned, :last_interaction_at]` e `[:abandoned, :abandoned_at]` como índices compostos, casando com o padrão de filtro de cada scope.
 
 ---
 
