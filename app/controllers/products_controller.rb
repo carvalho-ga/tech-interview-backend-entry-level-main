@@ -1,9 +1,17 @@
 class ProductsController < ApplicationController
   before_action :set_product, only: %i[ show update destroy ]
 
+  DEFAULT_PER_PAGE = 25
+  MAX_PER_PAGE = 100
+
   # GET /products
   def index
-    @products = Product.all
+    page = [params[:page].to_i, 1].max
+    per_page = params[:per_page].to_i
+    per_page = DEFAULT_PER_PAGE if per_page <= 0
+    per_page = MAX_PER_PAGE if per_page > MAX_PER_PAGE
+
+    @products = Product.order(:id).limit(per_page).offset((page - 1) * per_page)
 
     render json: @products
   end
