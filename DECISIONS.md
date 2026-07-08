@@ -46,6 +46,14 @@ Trocar `cart_item.update!(quantity: cart_item.quantity + quantity)` por `cart_it
 
 As duas coisas sempre acontecem ao mesmo tempo: quando um item é adicionado ou removido, o total muda e a interação é registrada. Separar isso em dois updates não traria nenhum ganho e ainda adicionaria uma query desnecessária. Preferi um único `update!` com os dois campos — mais direto.
 
+### Validação de quantidade dentro de add_product, não no controller
+
+A checagem de `quantity <= 0` vivia duplicada no controller, repetida em `create` e `add_item`. E tinha uma inconsistência: pra um item novo, `cart_items.create!` roda a validação do model e pegaria uma quantidade inválida de qualquer jeito; mas pra um item que já existe, uso `increment!`, que pula validações — então quem garantia que a soma não ficava negativa era só o guard clause do controller, não o model. Movi essa checagem para dentro de `Cart#add_product`, que agora recusa quantidade zero ou negativa antes de tocar no banco, cobrindo os dois caminhos (criar e incrementar) num lugar só. O controller só chama o método e trata o `false` como quantidade inválida.
+
+### Cart.find_or_create_for_session tira a regra de resolução de carrinho do controller
+
+A lógica de "como achar ou criar o carrinho da sessão atual" — olhar `session[:cart_id]`, cair no fallback via `CartItem` quando não há sessão, criar um novo se nada bater — é regra de domínio, não é sobre HTTP. Só a leitura e escrita do valor na sessão é, de fato, responsabilidade do controller (é cookie, o model não deveria conhecer isso). Separei essa lógica em `Cart.find_or_create_for_session(cart_id:, product_id:)`, que recebe só valores primitivos, e o controller ficou responsável apenas por ler `session[:cart_id]`, repassar pro model, e gravar o `id` do carrinho retornado de volta na sessão.
+
 ### abandoned? retornando o atributo booleano diretamente
 
 O Rails já gera esse método automaticamente para colunas boolean. Defini explicitamente para deixar claro que ele faz parte da interface pública do model, independente de como o Rails gera métodos por baixo dos panos.

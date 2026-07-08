@@ -20,7 +20,24 @@ class Cart < ApplicationRecord
     destroy if abandoned?
   end
 
+  def self.find_or_create_for_session(cart_id: nil, product_id: nil)
+    if cart_id.present?
+      cart = find_by(id: cart_id)
+      return cart if cart
+    end
+
+    if product_id.present?
+      existing_item = CartItem.find_by(product_id: product_id)
+      return existing_item.cart if existing_item
+    end
+
+    create!(total_price: 0)
+  end
+
   def add_product(product, quantity)
+    quantity = quantity.to_i
+    return false unless quantity.positive?
+
     with_lock do
       cart_item = cart_items.find_by(product: product)
 
@@ -32,6 +49,8 @@ class Cart < ApplicationRecord
 
       recalculate_total
     end
+
+    true
   end
 
   def remove_product(product_id)
