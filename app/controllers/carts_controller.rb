@@ -14,8 +14,7 @@ class CartsController < ApplicationController
     return render_invalid_quantity if quantity <= 0
 
     cart = find_or_create_cart(product_id: product.id)
-    add_product_to_cart(cart, product, quantity)
-    cart.recalculate_total
+    cart.add_product(product, quantity)
 
     render json: cart_response(cart), status: :ok
   end
@@ -27,21 +26,15 @@ class CartsController < ApplicationController
     quantity = params[:quantity].to_i
     return render_invalid_quantity if quantity <= 0
 
-    add_product_to_cart(@cart, product, quantity)
-    @cart.recalculate_total
+    @cart.add_product(product, quantity)
 
     render json: cart_response(@cart), status: :ok
   end
 
   def remove_item
-    cart_item = @cart.cart_items.find_by(product_id: params[:product_id])
-
-    if cart_item.nil?
+    unless @cart.remove_product(params[:product_id])
       return render json: { error: 'Product not found in cart' }, status: :unprocessable_entity
     end
-
-    cart_item.destroy
-    @cart.recalculate_total
 
     render json: cart_response(@cart), status: :ok
   end
@@ -75,16 +68,6 @@ class CartsController < ApplicationController
     product = Product.find_by(id: product_id)
     render json: { error: 'Product not found' }, status: :not_found if product.nil?
     product
-  end
-
-  def add_product_to_cart(cart, product, quantity)
-    cart_item = cart.cart_items.find_by(product: product)
-
-    if cart_item
-      cart_item.update!(quantity: cart_item.quantity + quantity)
-    else
-      cart.cart_items.create!(product: product, quantity: quantity)
-    end
   end
 
   def render_invalid_quantity

@@ -20,6 +20,36 @@ class Cart < ApplicationRecord
     destroy if abandoned?
   end
 
+  def add_product(product, quantity)
+    with_lock do
+      cart_item = cart_items.find_by(product: product)
+
+      if cart_item
+        cart_item.increment!(:quantity, quantity)
+      else
+        cart_items.create!(product: product, quantity: quantity)
+      end
+
+      recalculate_total
+    end
+  end
+
+  def remove_product(product_id)
+    removed = false
+
+    with_lock do
+      cart_item = cart_items.find_by(product_id: product_id)
+
+      if cart_item
+        cart_item.destroy
+        recalculate_total
+        removed = true
+      end
+    end
+
+    removed
+  end
+
   def recalculate_total
     total = cart_items.includes(:product).sum { |item| item.product.price * item.quantity }
     update!(total_price: total, last_interaction_at: Time.current)
