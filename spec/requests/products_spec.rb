@@ -24,6 +24,35 @@ RSpec.describe "/products", type: :request do
       get products_url, headers: valid_headers, as: :json
       expect(response).to be_successful
     end
+
+    it "returns at most the default number of products per page" do
+      create_list(:product, ProductsController::DEFAULT_PER_PAGE + 5)
+
+      get products_url, as: :json
+
+      json = JSON.parse(response.body)
+      expect(json.length).to eq(ProductsController::DEFAULT_PER_PAGE)
+    end
+
+    it "respects the per_page param, capped at the maximum" do
+      create_list(:product, ProductsController::MAX_PER_PAGE + 5)
+
+      get products_url, params: { per_page: ProductsController::MAX_PER_PAGE + 5 }
+
+      json = JSON.parse(response.body)
+      expect(json.length).to eq(ProductsController::MAX_PER_PAGE)
+    end
+
+    it "returns the second page of results" do
+      first_product = create(:product)
+      second_product = create(:product)
+
+      get products_url, params: { page: 2, per_page: 1 }
+
+      json = JSON.parse(response.body)
+      expect(json.length).to eq(1)
+      expect(json.first['id']).to eq(second_product.id)
+    end
   end
 
   describe "GET /show" do

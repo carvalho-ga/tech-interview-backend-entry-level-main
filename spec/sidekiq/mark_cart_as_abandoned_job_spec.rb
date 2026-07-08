@@ -41,6 +41,13 @@ RSpec.describe MarkCartAsAbandonedJob, type: :job do
 
         expect { described_class.new.perform }.not_to change { Cart.count }
       end
+
+      it 'removes the cart items along with the cart, via cascade delete' do
+        cart = create(:cart, abandoned: true, abandoned_at: 8.days.ago)
+        create(:cart_item, cart: cart)
+
+        expect { described_class.new.perform }.to change { CartItem.count }.by(-1)
+      end
     end
   end
 end
